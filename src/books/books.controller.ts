@@ -77,7 +77,7 @@ export class BooksController {
         publishers: { type: "string", example: '["Editorial X"]' },
         price: { type: "number", example: 12.5 },
         availability: { type: "boolean", example: true },
-        image: { type: "object", format: "binary" },
+        image: { type: "array", format: "" },
         file: { type: "string", format: "binary" },
       },
     },
