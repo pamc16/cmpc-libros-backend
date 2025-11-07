@@ -12,6 +12,9 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBody,
+  ApiOkResponse,
+  ApiUnauthorizedResponse,
+  ApiBadRequestResponse,
 } from '@nestjs/swagger';
 import { LoginDto } from './dto/auth.dto';
 
@@ -28,9 +31,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Iniciar sesión y obtener JWT' })
   @ApiBody({ type: LoginDto })
-  @ApiResponse({ status: 200, description: 'Token generado correctamente.' })
-  @ApiResponse({ status: 401, description: 'Credenciales inválidas.' })
-  async login(@Body() body: { username: string; password: string }) {
+  @ApiOkResponse({
+    description: 'Token generado correctamente.',
+    // opcional: puedes describir la forma de la respuesta si quieres
+    // schema: { example: { access_token: 'eyJ...', expiresIn: 3600, user: { id: 1, username: 'juan' } } }
+  })
+  @ApiUnauthorizedResponse({ description: 'Credenciales inválidas.' })
+  @ApiBadRequestResponse({ description: 'Request body inválido.' })
+  async login(@Body() body: LoginDto) {
     const user = await this.authService.validateUser(body.username, body.password);
     if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');

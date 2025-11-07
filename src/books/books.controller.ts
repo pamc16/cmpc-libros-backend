@@ -28,19 +28,60 @@ declare module "express" {
 }
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { streamBooksToCsv } from "../utils/csv";
-import { FileFieldsInterceptor, FileInterceptor } from "@nestjs/platform-express";
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from "@nestjs/platform-express";
 import { Request, Response } from "express";
 import { diskStorage } from "multer";
 import * as fs from "fs";
 import { extname, join } from "path";
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+  ApiQuery,
+  ApiParam,
+} from "@nestjs/swagger";
 
 type SortItem = { field: string; dir: "asc" | "desc" };
 const logger = new Logger("BooksController");
 
+@ApiTags("books") // Agrupa los endpoints
 @Controller("books")
 export class BooksController {
   constructor(private readonly booksService: BooksService) {}
 
+  /**
+   * CREATE - multipart/form-data con posible archivo image/file
+   */
+  @ApiOperation({ summary: "Crea un libro" })
+  @ApiResponse({
+    status: 201,
+    description: "Libro creado con éxito.",
+  })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    description:
+      "Datos del libro. authors/genres/publishers deben enviarse como JSON stringificados.",
+    schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", example: "Cien años de soledad" },
+        description: { type: "string" },
+        authors: { type: "string", example: '["Gabriel García Márquez"]' },
+        genres: { type: "string", example: '["Novela"]' },
+        publishers: { type: "string", example: '["Editorial X"]' },
+        price: { type: "number", example: 12.5 },
+        availability: { type: "boolean", example: true },
+        image: { type: "object", format: "binary" },
+        file: { type: "string", format: "binary" },
+      },
+    },
+  })
   @Post()
   @UseInterceptors(
     FileFieldsInterceptor(
@@ -61,7 +102,7 @@ export class BooksController {
                 "Error creando carpeta de uploads",
                 (err as any)?.message
               );
-              cb(err as any, 'uploads');
+              cb(err as any, "uploads");
             }
           },
           filename: (req, file, cb) => {
@@ -155,6 +196,32 @@ export class BooksController {
     }
   }
 
+  /**
+   * FIND ALL - query params documentados
+   */
+  @ApiOperation({ summary: "Obtener todos los libros" })
+  @ApiResponse({
+    status: 200,
+    description: "Lista de libros obtenida con éxito.",
+  })
+  @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
+  @ApiQuery({ name: "limit", required: false, type: Number, example: 20 })
+  @ApiQuery({ name: "title", required: false, type: String })
+  @ApiQuery({ name: "genre", required: false, type: String })
+  @ApiQuery({ name: "publisher", required: false, type: String })
+  @ApiQuery({ name: "author", required: false, type: String })
+  @ApiQuery({
+    name: "availability",
+    required: false,
+    type: String,
+    description: 'Use "true" or "false"',
+  })
+  @ApiQuery({
+    name: "sort",
+    required: false,
+    type: String,
+    description: 'Ej: "title:asc,price:desc"',
+  })
   @Get()
   findAll(
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -231,6 +298,15 @@ export class BooksController {
     return this.booksService.findAll(opts);
   }
 
+  /**
+   * EXPORT CSV
+   */
+  @ApiOperation({ summary: "Exportar información a csv" })
+  @ApiResponse({
+    status: 200,
+    description: "Información exportada con exito con exito.",
+  })
+  @ApiQuery({ name: "title", required: false, type: String })
   @Get("export/csv")
   async exportCsv(@Res() res: Response, @Query("title") title?: string) {
     res.setHeader("Content-Type", "text/csv");
@@ -239,12 +315,43 @@ export class BooksController {
     stream.pipe(res);
   }
 
+  /**
+   * FIND ONE
+   */
+  @ApiOperation({ summary: "Obtener un libro por id" })
+  @ApiResponse({ status: 200, description: "Libro encontrado." })
+  @ApiResponse({ status: 404, description: "Libro no encontrado." })
+  @ApiParam({ name: "id", description: "ID del libro" })
   @Get(":id")
   findOne(@Param("id") id: string) {
     return this.booksService.findOne(id);
   }
 
+  /**
+   * UPDATE
+   */
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "Actualizar un libro por id" })
+  @ApiResponse({ status: 200, description: "Libro actualizado." })
+  @ApiResponse({ status: 401, description: "No autorizado." })
+  @ApiParam({ name: "id", description: "ID del libro a actualizar" })
+  @ApiBody({
+    description:
+      "Cuerpo de actualización. authors/genres/publishers como JSON stringificados si aplican.",
+    schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        description: { type: "string" },
+        authors: { type: "string", example: '["Autor1","Autor2"]' },
+        genres: { type: "string", example: '["Género1"]' },
+        publishers: { type: "string", example: '["Editorial"]' },
+        price: { type: "number" },
+        availability: { type: "boolean" },
+      },
+    },
+  })
   @Put(":id")
   update(@Param("id") id: string, @Body() body: any, @Req() req: Request) {
     console.log("Update DTO received in controller:", body);
@@ -259,14 +366,30 @@ export class BooksController {
     );
   }
 
+  /**
+   * DELETE
+   */
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "Eliminar un libro por id" })
+  @ApiResponse({ status: 200, description: "Libro eliminado." })
+  @ApiResponse({ status: 401, description: "No autorizado." })
+  @ApiParam({ name: "id", description: "ID del libro a eliminar" })
   @Delete(":id")
   remove(@Param("id") id: string, @Req() req: Request) {
     const userId = (req.user as any)?.id;
     return this.booksService.remove(id, userId);
   }
 
+  /**
+   * RESTORE
+   */
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: "Restaurar un libro eliminado por id" })
+  @ApiResponse({ status: 200, description: "Libro restaurado." })
+  @ApiResponse({ status: 401, description: "No autorizado." })
+  @ApiParam({ name: "id", description: "ID del libro a restaurar" })
   @Post(":id/restore")
   restore(@Param("id") id: string, @Req() req: Request) {
     const userId = (req.user as any)?.id;
